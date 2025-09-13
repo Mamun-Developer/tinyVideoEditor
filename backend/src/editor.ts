@@ -1,9 +1,15 @@
+import { TextOverlay, TextStyle } from "./types/api";
+
+export interface TextPosition {
+  x: number;
+  y: number;
+}
+
 export interface TextOperation {
   type: "text";
   text: string;
-  position?: "top" | "bottom";
-  fontSize?: number;
-  color?: string;
+  position: TextPosition;
+  style: TextStyle;
   start?: number;
   duration?: number;
 }

@@ -1,0 +1,9 @@
+{
+  "name": "@tiny-video-editor/common",
+  "version": "1.0.0",
+  "private": true,
+  "types": "types/api.ts",
+  "files": [
+    "types"
+  ]
+}

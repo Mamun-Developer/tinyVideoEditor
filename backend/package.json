@@ -22,6 +22,7 @@
     "fluent-ffmpeg": "^2.1.3"
   },
   "devDependencies": {
+    "@tiny-video-editor/common": "file:../common",
     "@types/fluent-ffmpeg": "^2.1.27",
     "@types/node": "^24.3.1",
     "ts-node": "^10.9.2",

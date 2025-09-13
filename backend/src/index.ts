@@ -8,17 +8,7 @@ import { VideoEditor } from "@editor";
 import { VideoExporter } from "@exporter";
 import { FFMpegEngine } from "@engines/ffmpeg";
 
-interface EditRequestBody {
-  videoId: string;
-  overlays?: {
-    text: string;
-    position?: "top" | "bottom";
-    fontSize?: number;
-    color?: string;
-    start?: number;
-    duration?: number;
-  }[];
-}
+import { EditVideoRequest, EditVideoResponse, UploadVideoResponse, TextOverlay } from "./types/api";
 
 async function buildServer() {
   const fastify = Fastify({ logger: true });
@@ -35,41 +25,83 @@ async function buildServer() {
   // upload endpoint
   fastify.post("/upload", async (req, reply) => {
     const data = await req.file();
-    if (!data) return reply.status(400).send({ error: "No file uploaded" });
+    if (!data) {
+      const response: UploadVideoResponse = { success: false, error: "No file uploaded" };
+      return reply.status(400).send(response);
+    }
 
     const buffers: Buffer[] = [];
     for await (const chunk of data.file) buffers.push(chunk);
     const inputPath = path.join("uploads", data.filename);
     fs.writeFileSync(inputPath, Buffer.concat(buffers));
 
-    return reply.send({
-      videoId: data.filename,
-      url: `/uploads/${data.filename}`,
-    });
+    const response: UploadVideoResponse = {
+      success: true,
+      data: {
+        fileName: data.filename
+      }
+    };
+    return reply.send(response);
   });
 
   // edit endpoint
-  fastify.post<{ Body: EditRequestBody }>("/edit", async (req, reply) => {
-    const { videoId, overlays = [] } = req.body;
+  fastify.post<{ Body: EditVideoRequest }>("/edit", async (req, reply) => {
+    try {
+      const { videoId, textOverlays = [] } = req.body;
+      console.log('Received edit request:', { videoId, textOverlays }); // Debug log
 
-    if (!videoId) {
-      return reply.status(400).send({ error: "videoId is required" });
+      if (!videoId) {
+        const response: EditVideoResponse = { success: false, error: "videoId is required" };
+        return reply.status(400).send(response);
+      }
+
+      const inputPath = path.join("uploads", videoId);
+      console.log('Input path:', inputPath); // Debug log
+      
+      if (!fs.existsSync(inputPath)) {
+        console.error('Video file not found:', inputPath); // Debug log
+        const response: EditVideoResponse = { success: false, error: "Video not found" };
+        return reply.status(404).send(response);
+      }
+
+      const timestamp = Date.now();
+      const outputName = `output-${timestamp}.mp4`;
+      const outputPath = path.join("outputs", outputName);
+      console.log('Output path:', outputPath); // Debug log
+
+      const editor = new VideoEditor(inputPath);
+      textOverlays.forEach((overlay: TextOverlay) => {
+        editor.addText({
+          type: "text",
+          text: overlay.text,
+          start: overlay.timestamp,
+          duration: 5,
+          position: {
+            x: overlay.position.x,
+            y: overlay.position.y
+          },
+          style: overlay.style
+        });
+      });
+
+      const exporter = new VideoExporter(editor, new FFMpegEngine(inputPath));
+      await exporter.export(outputPath);
+
+      const response: EditVideoResponse = {
+        success: true,
+        data: {
+          outputPath: outputName
+        }
+      };
+      return reply.send(response);
+    } catch (error) {
+      console.error('Error processing video:', error);
+      const response: EditVideoResponse = {
+        success: false,
+        error: 'Error processing video: ' + (error instanceof Error ? error.message : String(error))
+      };
+      return reply.status(500).send(response);
     }
-
-    const inputPath = path.join("uploads", videoId);
-    if (!fs.existsSync(inputPath)) {
-      return reply.status(404).send({ error: "Video not found" });
-    }
-
-    const outputPath = path.join("outputs", `output-${Date.now()}.mp4`);
-
-    const editor = new VideoEditor(inputPath);
-    overlays.forEach((o) => editor.addText({ ...o, type: "text" }));
-
-    const exporter = new VideoExporter(editor, new FFMpegEngine(inputPath));
-    await exporter.export(outputPath);
-
-    return reply.send({ url: `/outputs/${path.basename(outputPath)}` });
   });
 
   // static serving (uploads + outputs)
